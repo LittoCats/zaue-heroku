@@ -1,0 +1,159 @@
+#!/usr/bin/env sh
+
+######################################################################
+# @author      : 程巍巍 (littocats@gmail.com)
+# @file        : zaue
+# @created     : Wednesday May 12, 2021 13:24:16 CST
+#
+# @description : 
+######################################################################
+
+# 需要指定的日志文件，都指向同一个 pipe
+# 通过 cat 命令输出到 stdout
+
+mkdir -p /var/log
+mkfifo /var/log/vstd.tail
+cat /var/log/vstd.tail &
+
+# frps 配置
+FRPS_PORT=7000
+FRPS_DASH_PORT=7001
+if [ "$FRPS_USR" = "" ]; then
+  FRPS_USR="admin"
+fi
+if [ "$FRPS_PWD" = "" ]; then
+  FRPS_PWD="admin"
+fi
+
+# wstunnel 配置
+WSTUNNEL_PORT=8000
+
+# 准备 nats-server 配置文件
+if [ "$NATS_PORT" = "" ]; then
+  NATS_PORT=4222
+fi
+if [ "$NATS_HTTP_PORT" = "" ]; then
+  NATS_HTTP_PORT=4223
+fi
+if [ "$NATS_WS_PORT" = "" ]; then
+  NATS_WS_PORT=4225
+fi
+
+NATS="
+listen: 0.0.0.0:$NATS_PORT
+http: 0.0.0.0:$NATS_HTTP_PORT
+
+websocket {
+  listen: 0.0.0.0:$NATS_WS_PORT
+  no_tls: true
+  compression: true
+  handshake_timeout: \"5s\"
+}
+"
+
+echo "$NATS" > /etc/nats.conf
+
+
+# 准备 nginx 配置文件
+NGINX="
+map \$http_upgrade \$connection_upgrade {
+  default upgrade;
+  '' close;
+}
+
+upstream wstunnel {
+  server localhost:$WSTUNNEL_PORT;
+}
+
+upstream frps_dashboard {
+  server localhost:$FRPS_DASH_PORT;
+}
+
+upstream nats_monitor {
+  server localhost:$NATS_HTTP_PORT;
+}
+
+upstream nats_server {
+  server localhost:$NATS_WS_PORT;
+}
+
+server {
+  gzip on;
+
+	listen $PORT default_server;
+	listen [::]:$PORT default_server;
+
+  access_log /var/log/vstd.tail;
+  error_log /var/log/vstd.tail;
+
+  location /wstunnel/ {
+    proxy_pass http://wstunnel;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection \$connection_upgrade;
+    proxy_set_header Host \$host;
+    add_header Set-Cookie x-zaue-service=wstunnel;
+  }
+
+  location /frps/ {
+    rewrite /frps/(.*) /\$1 break;
+    proxy_pass http://frps_dashboard;
+    proxy_redirect off;
+    proxy_set_header Host \$host;
+    add_header Set-Cookie x-zaue-service=frps;
+    sub_filter 'href=\"/' 'href=\"/frps/';
+    proxy_hide_header Location;
+    add_header Location /frps/static/;
+  }
+
+  location /nats/status/ {
+    proxy_pass http://nats_monitor/;
+    proxy_redirect off;
+    proxy_set_header Host \$host;
+    add_header Set-Cookie x-zaue-service=nats;
+  }
+
+  location /nats/ {
+    proxy_pass http://nats_server;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection \$connection_upgrade;
+    proxy_set_header Host \$host;
+    add_header Set-Cookie x-zaue-service=wstunnel;
+  }
+
+	# Everything is a 404
+	location / {
+    add_header Content-Type: \"text/html; charset=utf-8\";
+		return 200 'Welcom to zaue proxy services';
+	}
+
+	# You may need this to prevent return 404 recursion.
+	location = /404.html {
+		internal;
+	}
+}"
+
+echo "$NGINX" > /etc/nginx/conf.d/default.conf
+
+
+
+# 启动 frps
+frps --bind_port $FRPS_PORT \
+  --dashboard_port $FRPS_DASH_PORT      \
+  --dashboard_pwd "$FRPS_PWD"   \
+  --dashboard_user "$FRPS_USR"  \
+  &
+
+# 启动 wstunnel
+wstunnel --server "ws://0.0.0.0:$WSTUNNEL_PORT" &
+
+# 启动 nats-server
+nats-server -c /etc/nats.conf &
+
+
+# 启动 nginx
+nginx -g 'daemon off;'
+
