@@ -20,6 +20,9 @@ cat "$VSTD" &
 if [ "$AUTHORIZED_KEYS" = "" ]; then
   AUTHORIZED_KEYS="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCvIXAhbKldkU28rTHbKjORpjfn3C1o6yznNiuECjWjnxQboCSj3Mbf8Xduq8d2fJb44smVUj9ucVjd1+qC9f8K6BxB5Ylh+e++ySpnjGrOCD7ZVZ0/m4jzmUQB+eoNMrFcNOoGrlLzs25eHN001UrFZSUClu5nUPgrRJAYlXnuDmK8GxQfrLGT59rjTAM8DAqcM2VnkM0XM9K3/HcrzJPPyRDks5UDRGcI4MlvoWAGrMXMCY58zyNCeQVSmp0aALgtP8XIx6ZLbYee7P4aZaEZBickMAmSDKMF1XNhg+62uuEbvD/kz1+QFdL5ehwTZjGV+vgoYTZ37M3qH2iaJJq5 littocats@Private.local"
 fi
+if [ "$SSHD_PORT" = "" ]; then
+  SSHD_PORT=22
+fi
 
 # frps 配置
 FRPS_PORT=7000
@@ -173,10 +176,12 @@ echo "Start nats-server: $?"
 
 # 启动 nginx
 nginx
+echo "Start nginx: $?"
 
 # 启动 sshd
 ssh-keygen -A
 mkdir -p ~/.ssh
 echo "$AUTHORIZED_KEYS" > ~/.ssh/authorized_keys
 passwd -d root
+sed -i "s/#Port 22/Port $SSHD_PORT/" /etc/ssh/sshd_config
 /usr/sbin/sshd -De
