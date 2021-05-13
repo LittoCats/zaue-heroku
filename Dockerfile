@@ -19,7 +19,7 @@ RUN chmod +x /usr/bin/frps
 
 FROM alpine
 
-RUN apk add --no-cache nginx openssh-server
+RUN apk add --no-cache nginx
 RUN mkdir -p /run/nginx
 
 COPY --from=build /usr/bin/nats-server /bin/
