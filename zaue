@@ -126,8 +126,12 @@ server {
 
 	# Everything is a 404
 	location / {
-    add_header Content-Type: \"text/html; charset=utf-8\";
-		return 200 'Welcom to zaue proxy services';
+    resolver 8.8.8.8;
+    if (\$http_proxy_connection = '') {
+      add_header Content-Type: \"text/html; charset=utf-8\";
+		  return 200 'Welcom to zaue proxy services';
+    }
+    proxy_pass https://\$http_host\$request_uri;
 	}
 
 	# You may need this to prevent return 404 recursion.
@@ -146,12 +150,15 @@ frps --bind_port $FRPS_PORT \
   --dashboard_pwd "$FRPS_PWD"   \
   --dashboard_user "$FRPS_USR"  \
   &
+echo "Start frps: $?"
 
 # 启动 wstunnel
 wstunnel --server "ws://0.0.0.0:$WSTUNNEL_PORT" &
+echo "Start wstunnel: $?"
 
 # 启动 nats-server
 nats-server -c /etc/nats.conf &
+echo "Start nats-server: $?"
 
 
 # 启动 nginx
