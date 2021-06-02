@@ -133,14 +133,8 @@ server {
 
   $NGINX_DYNAMIC_LOCATION
 
-  # Everything is a 404
   location / {
-    resolver 8.8.8.8;
-    if (\$http_proxy_connection = '') {
-      add_header Content-Type: \"text/html; charset=utf-8\";
-      return 200 'Welcom to zaue proxy services';
-    }
-    proxy_pass https://\$http_host\$request_uri;
+    proxy_pass http://127.0.0.1:8080/;
 	}
 
 	# You may need this to prevent return 404 recursion.
